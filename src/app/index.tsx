@@ -28,7 +28,8 @@ export default function HomeScreen() {
   }, []);
 
   useEffect(() => {
-    void checkApi();
+    const timer = setTimeout(() => void checkApi(), 0);
+    return () => clearTimeout(timer);
   }, [checkApi]);
 
   return (
