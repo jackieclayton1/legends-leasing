@@ -1,0 +1,78 @@
+@import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Nunito:wght@400;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 40 50% 97%;
+    --foreground: 20 22% 18%;
+    --card: 0 0% 100%;
+    --card-foreground: 20 22% 18%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 20 22% 18%;
+    --primary: 3 58% 48%;
+    --primary-foreground: 40 60% 98%;
+    --secondary: 30 65% 94%;
+    --secondary-foreground: 20 22% 18%;
+    --muted: 35 45% 94%;
+    --muted-foreground: 25 15% 45%;
+    --accent: 3 58% 48%;
+    --accent-foreground: 40 60% 98%;
+    --destructive: 0 70% 52%;
+    --destructive-foreground: 40 60% 98%;
+    --border: 28 40% 88%;
+    --input: 28 40% 88%;
+    --ring: 3 58% 48%;
+    --radius: 22px;
+    --font-heading: "Fredoka", "Nunito", system-ui, sans-serif;
+    --font-body: "Nunito", system-ui, sans-serif;
+    --font-display: "Fredoka", "Nunito", system-ui, sans-serif;
+    --font-label: "Nunito", system-ui, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground font-body antialiased;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-heading;
+  }
+}
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+  .lab {
+    font-family: var(--font-heading);
+    letter-spacing: .03em;
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  .focus-ring:focus-visible {
+    outline: 2px solid hsl(var(--primary));
+    outline-offset: 3px;
+  }
+
+  .anim-rise { animation: rise 1s ease-out both; }
+  .anim-rise-slow { animation: rise 1.2s ease-out both; }
+  .anim-draw { animation: draw 1.4s ease-out .3s both; }
+}
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(22px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes draw {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
