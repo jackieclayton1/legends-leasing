@@ -1,43 +1,27 @@
-# Legends Leasing
+# Legends Leasing — Tuscaloosa Maps
 
-One Expo Router project provides the iOS, Android, and web clients plus an in-project API route.
+An Apple Maps–style app for finding off-campus apartments around The University of Alabama, built with Expo (iOS, Android and web).
 
-## Run locally
+- **iOS** uses Apple MapKit through `react-native-maps`; **Android** uses Google Maps.
+- **Web** uses MapLibre GL with OpenFreeMap's OpenStreetMap tiles, recolored to Apple's palette (`src/components/maps/apple-style.ts`), opening in a tilted 3D view with extruded buildings.
+- Search, filters (beds, price, pets, furnished, shuttle, walk-to-class), apartment cards, detail pages, saved listings, walking/biking/driving directions to campus spots (OSRM via routing.openstreetmap.de), satellite view, and a live weather/AQI badge (Open-Meteo).
 
-```bash
-npx expo start
-```
-
-The home screen calls `GET /api/health`. With no API environment variable, Expo routes that relative request to the local Expo server during development.
-
-## Use the deployed API from mobile development
-
-Copy `.env.example` to `.env` and set your Vercel production or preview origin:
+## Run it
 
 ```bash
-EXPO_PUBLIC_API_URL=https://your-project.vercel.app
+pnpm install
+npx expo start          # press w for web, or scan the QR code with Expo Go
+npx expo start --web    # web only
 ```
 
-Restart Expo after changing the variable. `EXPO_PUBLIC_*` values are bundled into the app, so do not put secrets in this variable. The deployed URL is public by design; server-only secrets belong in Vercel environment variables and are read only by API route code.
+## Where things live
 
-## Vercel deployment
+| Path | What |
+| --- | --- |
+| `src/app/index.tsx` | Map screen: state, selection, directions |
+| `src/components/maps/` | Map (native + `.web.tsx`), sheet/side panel, cards, controls |
+| `src/data/apartments.ts` | Listings — **sample data**, replace with real inventory |
+| `src/data/campus.ts` | Campus landmarks and commute destinations |
+| `src/lib/` | Distance/time math, filtering, routing |
 
-`vercel.json` uses Expo Router's Vercel server adapter. It exports client assets to `dist/client`, includes the server bundle from `dist/server`, and sends both page and API requests to the server handler. The API route is therefore deployed with the web app.
-
-1. Import this repository in Vercel, or run `npx vercel` from the project root.
-2. Keep the build command from `vercel.json`: `npx expo export --platform web`.
-3. After Vercel gives you a URL, add it as `EXPO_PUBLIC_API_URL` in a local `.env` to make native development builds call that deployment.
-
-To check the exported server locally:
-
-```bash
-npx expo export --platform web
-npx expo serve
-```
-
-## Verify
-
-```bash
-npx expo lint
-npx tsc --noEmit
-```
+Listing names, prices, phone numbers (555) and reviews are placeholders; coordinates are approximate.

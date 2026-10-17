@@ -1,120 +1,284 @@
-import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet } from 'react-native';
+import * as Haptics from 'expo-haptics';
+import * as Location from 'expo-location';
+import { StatusBar } from 'expo-status-bar';
+import { useEffect, useRef, useState } from 'react';
+import { Alert, Keyboard, Platform, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
-import { apiUrl, getHealth, type HealthResponse } from '@/lib/api';
+import { DirectionsPanel } from '@/components/maps/directions-panel';
+import { HomePanel } from '@/components/maps/home-panel';
+import { LandmarkCard } from '@/components/maps/landmark-card';
+import { MapCanvas } from '@/components/maps/map-canvas';
+import type { MapCanvasHandle, MapType } from '@/components/maps/map-canvas.types';
+import { MapControls } from '@/components/maps/map-controls';
+import { MapsSheet, useSheetMetrics, type Detent } from '@/components/maps/maps-sheet';
+import { PlaceCard } from '@/components/maps/place-card';
+import { SearchBar } from '@/components/maps/search-bar';
+import { WeatherBadge } from '@/components/maps/weather-badge';
+import { useMapsTheme } from '@/constants/maps-theme';
+import { APARTMENTS, apartmentById } from '@/data/apartments';
+import { CAMPUS_OUTLINE, LANDMARKS, landmarkById } from '@/data/campus';
+import type { LatLng, Route, TravelMode } from '@/data/types';
+import { useIsClient } from '@/hooks/use-is-client';
+import { filterApartments, filterLandmarks, NO_FILTERS, type SortKey } from '@/lib/filters';
+import { fetchRoute } from '@/lib/routing';
 
-export default function HomeScreen() {
-  const theme = useTheme();
-  const [result, setResult] = useState<HealthResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+type Panel =
+  | { kind: 'home' }
+  | { kind: 'apartment'; id: string }
+  | { kind: 'landmark'; id: string }
+  | { kind: 'directions'; id: string };
 
-  const checkApi = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
+const campusPoints = CAMPUS_OUTLINE.map(([longitude, latitude]) => ({ latitude, longitude }));
 
-    try {
-      setResult(await getHealth());
-    } catch (requestError) {
-      setResult(null);
-      setError(requestError instanceof Error ? requestError.message : 'Unable to reach the API.');
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+function tick() {
+  if (Platform.OS !== 'web') Haptics.selectionAsync();
+}
 
+export default function Index() {
+  // The map layout depends on the window size, which isn't known while the
+  // web build is server-rendered — so render the screen on the client only.
+  const isClient = useIsClient();
+  return isClient ? <MapScreen /> : <View style={styles.root} />;
+}
+
+function MapScreen() {
+  const map = useRef<MapCanvasHandle>(null);
+  const safe = useSafeAreaInsets();
+  const { dark } = useMapsTheme();
+  const { wide, heights, panelWidth } = useSheetMetrics();
+
+  const [panel, setPanel] = useState<Panel>({ kind: 'home' });
+  const [detent, setDetent] = useState<Detent>('medium');
+  const [query, setQuery] = useState('');
+  const [searching, setSearching] = useState(false);
+  const [filters, setFilters] = useState(NO_FILTERS);
+  const [sort, setSort] = useState<SortKey>('distance');
+  const [saved, setSaved] = useState<string[]>([]);
+  const [mapType, setMapType] = useState<MapType>('standard');
+  const [is3D, setIs3D] = useState(true);
+  const [heading, setHeading] = useState(0);
+  const [userLocation, setUserLocation] = useState<LatLng | null>(null);
+  const [locating, setLocating] = useState(false);
+  const [destinationId, setDestinationId] = useState('quad');
+  const [mode, setMode] = useState<TravelMode>('walk');
+  const [route, setRoute] = useState<Route | null>(null);
+
+  const results = filterApartments(APARTMENTS, query, filters, sort, saved);
+  const placeResults = filterLandmarks(LANDMARKS, query);
+
+  const selectedId = panel.kind === 'home' ? null : panel.id;
+  const selectedApartment =
+    panel.kind === 'apartment' || panel.kind === 'directions' ? apartmentById[panel.id] : null;
+  // Keep the selected apartment on the map even if filters would hide it.
+  const mapApartments =
+    selectedApartment && !results.includes(selectedApartment)
+      ? [...results, selectedApartment]
+      : results;
+
+  // Fetch a street route whenever directions are showing.
+  const directionsFor = panel.kind === 'directions' ? panel.id : null;
   useEffect(() => {
-    const timer = setTimeout(() => void checkApi(), 0);
-    return () => clearTimeout(timer);
-  }, [checkApi]);
+    if (!directionsFor) return;
+    const controller = new AbortController();
+    fetchRoute(apartmentById[directionsFor], landmarkById[destinationId], mode, controller.signal)
+      .then((r) => {
+        setRoute(r);
+        map.current?.fitTo(r.coordinates.map(([longitude, latitude]) => ({ latitude, longitude })));
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [directionsFor, destinationId, mode]);
+
+  const mapInsets = wide
+    ? { top: 0, bottom: 0, left: panelWidth + 24, right: 0 }
+    : { top: safe.top, bottom: heights[detent === 'large' ? 'medium' : detent], left: 0, right: 0 };
+
+  const endSearch = () => {
+    Keyboard.dismiss();
+    setSearching(false);
+  };
+
+  const selectApartment = (id: string) => {
+    tick();
+    endSearch();
+    setPanel({ kind: 'apartment', id });
+    if (!wide) setDetent('medium');
+    map.current?.flyTo(apartmentById[id], 16);
+  };
+
+  const selectLandmark = (id: string) => {
+    tick();
+    endSearch();
+    setPanel({ kind: 'landmark', id });
+    if (!wide) setDetent('medium');
+    map.current?.flyTo(landmarkById[id], 16);
+  };
+
+  const closePanel = () => {
+    setPanel({ kind: 'home' });
+    if (!wide) setDetent('medium');
+  };
+
+  const showCampus = () => {
+    endSearch();
+    setPanel({ kind: 'home' });
+    map.current?.fitTo(campusPoints);
+  };
+
+  const locate = async () => {
+    setLocating(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Location Off', 'Allow location access to see where you are on the map.');
+        return;
+      }
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const here = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+      setUserLocation(here);
+      map.current?.flyTo(here, 15);
+    } catch {
+      Alert.alert('Location Unavailable', "We couldn't find your current location.");
+    } finally {
+      setLocating(false);
+    }
+  };
+
+  const toggleSaved = (id: string) => {
+    tick();
+    setSaved((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+  };
+
+  let content;
+  if (panel.kind === 'apartment') {
+    content = (
+      <PlaceCard
+        apartment={apartmentById[panel.id]}
+        saved={saved.includes(panel.id)}
+        destinationId={destinationId}
+        onDestinationChange={setDestinationId}
+        onToggleSaved={() => toggleSaved(panel.id)}
+        onDirections={(m) => {
+          setMode(m);
+          setPanel({ kind: 'directions', id: panel.id });
+        }}
+        onClose={closePanel}
+      />
+    );
+  } else if (panel.kind === 'directions') {
+    content = (
+      <DirectionsPanel
+        apartment={apartmentById[panel.id]}
+        destinationId={destinationId}
+        mode={mode}
+        route={route}
+        onModeChange={setMode}
+        onDestinationChange={setDestinationId}
+        onClose={() => {
+          setPanel({ kind: 'apartment', id: panel.id });
+          map.current?.flyTo(apartmentById[panel.id], 16);
+        }}
+      />
+    );
+  } else if (panel.kind === 'landmark') {
+    content = (
+      <LandmarkCard
+        landmark={landmarkById[panel.id]}
+        apartments={APARTMENTS}
+        saved={saved}
+        onSelectApartment={selectApartment}
+        onClose={closePanel}
+      />
+    );
+  } else {
+    content = (
+      <HomePanel
+        query={query}
+        apartments={results}
+        landmarks={placeResults}
+        filters={filters}
+        sort={sort}
+        saved={saved}
+        onFiltersChange={setFilters}
+        onSortChange={setSort}
+        onSelectApartment={selectApartment}
+        onSelectLandmark={selectLandmark}
+        onShowCampus={showCampus}
+      />
+    );
+  }
 
   return (
-    <ScrollView
-      style={[styles.scrollView, { backgroundColor: theme.background }]}
-      contentInsetAdjustmentBehavior="automatic"
-      contentContainerStyle={styles.content}>
-      <ThemedView style={styles.container}>
-        <ThemedText type="title">Connected app</ThemedText>
-        <ThemedText themeColor="textSecondary" style={styles.description}>
-          This screen calls an Expo Router API route that is deployed alongside the web app.
-        </ThemedText>
+    <View style={styles.root}>
+      <StatusBar style={dark || mapType === 'satellite' ? 'light' : 'dark'} />
+      <MapCanvas
+        ref={map}
+        apartments={mapApartments}
+        landmarks={LANDMARKS}
+        selectedId={selectedId}
+        route={panel.kind === 'directions' ? route : null}
+        mapType={mapType}
+        is3D={is3D}
+        userLocation={userLocation}
+        insets={mapInsets}
+        onSelectApartment={selectApartment}
+        onSelectLandmark={selectLandmark}
+        onPressMap={() => {
+          if (searching) endSearch();
+          else if (panel.kind === 'apartment' || panel.kind === 'landmark') closePanel();
+        }}
+        onHeadingChange={setHeading}
+      />
 
-        <ThemedView type="backgroundElement" style={styles.card}>
-          <ThemedText type="smallBold">GET {apiUrl('/api/health')}</ThemedText>
+      <MapControls
+        mapType={mapType}
+        onMapTypeChange={setMapType}
+        is3D={is3D}
+        onToggle3D={() => setIs3D((v) => !v)}
+        locating={locating}
+        onLocate={locate}
+        heading={heading}
+        onResetNorth={() => map.current?.resetNorth()}
+        onZoom={(d) => map.current?.zoomBy(d)}
+        wide={wide}
+        footer={wide ? <WeatherBadge /> : null}
+      />
 
-          {isLoading ? (
-            <ThemedView style={styles.statusRow}>
-              <ActivityIndicator color={theme.tint} />
-              <ThemedText themeColor="textSecondary">Contacting API…</ThemedText>
-            </ThemedView>
-          ) : error ? (
-            <ThemedText selectable style={[styles.status, { color: theme.danger }]}>
-              {error}
-            </ThemedText>
-          ) : (
-            <ThemedView style={styles.response}>
-              <ThemedText type="subtitle" selectable>
-                {result?.message}
-              </ThemedText>
-              <ThemedText selectable themeColor="textSecondary">
-                Status: {result?.status} · {result?.timestamp}
-              </ThemedText>
-            </ThemedView>
-          )}
+      {!wide && (
+        <View style={[styles.weather, { top: safe.top + 10 }]}>
+          <WeatherBadge />
+        </View>
+      )}
 
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Call API again"
-            disabled={isLoading}
-            onPress={() => void checkApi()}
-            style={({ pressed }) => [
-              styles.button,
-              { backgroundColor: theme.tint },
-              (pressed || isLoading) && styles.buttonPressed,
-            ]}>
-            <ThemedText style={styles.buttonLabel}>Call API</ThemedText>
-          </Pressable>
-        </ThemedView>
-
-        <ThemedText type="small" themeColor="textSecondary">
-          Set EXPO_PUBLIC_API_URL to your Vercel URL to use the deployed API from a native dev
-          build. Leave it unset to call the local Expo server.
-        </ThemedText>
-      </ThemedView>
-    </ScrollView>
+      <MapsSheet
+        detent={detent}
+        onDetentChange={setDetent}
+        header={
+          panel.kind === 'home' ? (
+            <SearchBar
+              value={query}
+              onChangeText={setQuery}
+              focused={searching}
+              onFocus={() => {
+                setSearching(true);
+                if (!wide) setDetent('large');
+              }}
+              onCancel={() => {
+                setQuery('');
+                endSearch();
+                if (!wide) setDetent('medium');
+              }}
+            />
+          ) : null
+        }>
+        {content}
+      </MapsSheet>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  scrollView: { flex: 1 },
-  content: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    padding: Spacing.four,
-    paddingBottom: BottomTabInset + Spacing.four,
-  },
-  container: { flex: 1, gap: Spacing.four, maxWidth: MaxContentWidth },
-  description: { lineHeight: 22 },
-  card: {
-    gap: Spacing.three,
-    padding: Spacing.four,
-    borderRadius: Spacing.four,
-    borderCurve: 'continuous',
-  },
-  statusRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
-  status: { lineHeight: 22 },
-  response: { gap: Spacing.one },
-  button: {
-    alignItems: 'center',
-    borderRadius: Spacing.three,
-    borderCurve: 'continuous',
-    paddingHorizontal: Spacing.four,
-    paddingVertical: Spacing.three,
-  },
-  buttonPressed: { opacity: 0.7 },
-  buttonLabel: { color: '#FFFFFF', fontWeight: '700' },
+  root: { flex: 1 },
+  weather: { position: 'absolute', left: 10 },
 });

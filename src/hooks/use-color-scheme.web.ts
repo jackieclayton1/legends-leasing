@@ -1,22 +1,12 @@
-import { useEffect, useState } from 'react';
 import { useColorScheme as useRNColorScheme } from 'react-native';
+
+import { useIsClient } from './use-is-client';
 
 /**
  * To support static rendering, this value needs to be re-calculated on the client side for web
  */
 export function useColorScheme() {
-  const [hasHydrated, setHasHydrated] = useState(false);
-
-  useEffect(() => {
-    const timer = setTimeout(() => setHasHydrated(true), 0);
-    return () => clearTimeout(timer);
-  }, []);
-
+  const isClient = useIsClient();
   const colorScheme = useRNColorScheme();
-
-  if (hasHydrated) {
-    return colorScheme;
-  }
-
-  return 'light';
+  return isClient ? colorScheme : 'light';
 }
