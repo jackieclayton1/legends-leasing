@@ -118,6 +118,7 @@ function EmailOtpSignIn() {
 
   return (
     <GateShell>
+      <ThemedText type="smallBold" style={[styles.eyebrow, { color: theme.tint }]}>LEGENDS LEASING · UA</ThemedText>
       <ThemedText type="title">UA student access</ThemedText>
       <ThemedText themeColor="textSecondary" style={styles.copy}>
         Use your UA email to receive a one-time sign-in code. This is not UA official SSO.
@@ -254,13 +255,17 @@ function EligibilityGate({ children }: PropsWithChildren) {
 
   return (
     <GateShell>
-      <ThemedText type="title">Eligibility required</ThemedText>
+      <ThemedText type="smallBold" style={[styles.eyebrow, { color: theme.tint }]}>STEP 2 OF 2 · STUDENT VERIFICATION</ThemedText>
+      <ThemedText type="title">Confirm your student access</ThemedText>
       <ThemedText themeColor="textSecondary" style={styles.copy}>
         {eligibility?.status === 'expired'
           ? 'Your student eligibility has expired. Renew it to regain access.'
           : eligibility?.status === 'rejected'
             ? 'Your verification was not approved. Contact support or try again when available.'
-            : 'Your account is signed in, but student eligibility has not been verified yet.'}
+            : 'Your account is signed in. Complete the mock SheerID step to open the UA campus map.'}
+      </ThemedText>
+      <ThemedText type="small" themeColor="textSecondary">
+        Development mode uses your Clerk-verified UA email in place of a live SheerID redirect.
       </ThemedText>
       {error ? <ThemedText style={{ color: theme.danger }}>{error}</ThemedText> : null}
       <Pressable
@@ -268,7 +273,7 @@ function EligibilityGate({ children }: PropsWithChildren) {
         disabled={isStarting}
         onPress={() => void requestVerification()}
         style={({ pressed }) => [styles.button, { backgroundColor: theme.tint }, (pressed || isStarting) && styles.buttonPressed]}>
-        {isStarting ? <ActivityIndicator color="#FFFFFF" /> : <ThemedText style={styles.buttonLabel}>Verify student status</ThemedText>}
+        {isStarting ? <ActivityIndicator color="#FFFFFF" /> : <ThemedText style={styles.buttonLabel}>Complete mock SheerID check</ThemedText>}
       </Pressable>
       <Pressable onPress={() => void signOut()}>
         <ThemedText type="link">Sign out</ThemedText>
@@ -294,6 +299,7 @@ const styles = StyleSheet.create({
   scrollContent: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', padding: Spacing.four, paddingBottom: BottomTabInset + Spacing.four },
   card: { width: '100%', maxWidth: MaxContentWidth, gap: Spacing.three, padding: Spacing.four, borderRadius: Spacing.four, borderCurve: 'continuous' },
   copy: { lineHeight: 22 },
+  eyebrow: { letterSpacing: 0.7 },
   form: { gap: Spacing.two },
   input: { borderWidth: StyleSheet.hairlineWidth, borderRadius: Spacing.two, fontSize: 16, paddingHorizontal: Spacing.three, paddingVertical: 14 },
   button: { alignItems: 'center', borderRadius: Spacing.three, minHeight: 48, justifyContent: 'center', paddingHorizontal: Spacing.four, paddingVertical: Spacing.three },

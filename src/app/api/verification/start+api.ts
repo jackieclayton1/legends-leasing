@@ -24,7 +24,7 @@ export async function POST(request: Request) {
       await recordVerificationResult(start.result);
       return Response.json({
         status: 'verified',
-        message: 'Your verified UA email has confirmed your access.',
+        message: 'Your mock SheerID check is complete. Welcome to the UA campus map.',
       });
     }
 

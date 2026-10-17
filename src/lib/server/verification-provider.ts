@@ -20,20 +20,21 @@ export interface StudentVerificationProvider {
 }
 
 /**
- * A Clerk-verified UA address is the selected development verifier. It works in
- * Expo web, iOS, and Android without a vendor redirect, and is only reached
- * after `requireAuthenticatedUser` confirms the primary Clerk email is verified.
+ * This is a deliberate local mock of the SheerID completion step. It is reached
+ * only after `requireAuthenticatedUser` has confirmed a verified UA email, then
+ * records a normal provider reference/status so all later authorization behaves
+ * exactly as it will with the real provider.
  *
  * Replace this with a vetted SheerID or Student Beans adapter when that vendor's
  * credentials, callback signature verification, and UA coverage are approved.
  */
-class VerifiedUaEmailProvider implements StudentVerificationProvider {
+class MockSheerIdEmailProvider implements StudentVerificationProvider {
   async start({ tenantSlug, user }: { tenantSlug: string; user: AuthenticatedUser }): Promise<VerificationStart> {
     return {
       result: {
         tenantSlug,
         clerkUserId: user.clerkUserId,
-        providerReference: `clerk-verified-email:${user.clerkUserId}`,
+        providerReference: `mock-sheerid:clerk-verified-email:${user.clerkUserId}`,
         status: 'verified',
         category: null,
         expiresAt: null,
@@ -42,10 +43,10 @@ class VerifiedUaEmailProvider implements StudentVerificationProvider {
   }
 
   async verifyCallback(): Promise<ProviderResult> {
-    throw new Error('The verified-UA-email provider does not use callbacks.');
+    throw new Error('The mock SheerID provider does not use callbacks.');
   }
 }
 
 export function getVerificationProvider(): StudentVerificationProvider | null {
-  return new VerifiedUaEmailProvider();
+  return new MockSheerIdEmailProvider();
 }
