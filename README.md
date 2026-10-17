@@ -1,8 +1,12 @@
 # Legends Leasing
 
-One Expo Router project provides the iOS, Android, and web clients plus an in-project API route.
+Legends Leasing is the premier way to find subleasers and have your apartment sublet at The University of Alabama. Soon to arrive on other campuses. ETA: Spring 2027.
+
+This platform ensures safety for the subleaser the entire time, from uploading your apartment for sublease for them to receiving payment on time every month. It also ensures safety for the one staying in the subleased apartment with .edu verification and secure payment platforms with no unusual payment processing delays.
 
 ## Run locally
+
+One Expo Router project provides the iOS, Android, and web clients plus an in-project API route.
 
 ```bash
 npx expo start
