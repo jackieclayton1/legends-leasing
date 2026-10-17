@@ -1,5 +1,7 @@
 import type { EligibilityResponse, EligibilityStatus } from '@/lib/eligibility';
-import { sql } from '@/lib/server/db';
+import { and, desc, eq, sql } from 'drizzle-orm';
+import { db } from '@/lib/server/db';
+import { studentEligibilities, tenants } from '@/lib/server/schema';
 import type { AuthenticatedUser } from '@/lib/server/auth';
 
 type TenantRow = {
@@ -11,20 +13,19 @@ type TenantRow = {
 type EligibilityRow = {
   status: EligibilityStatus;
   category: EligibilityResponse['category'];
-  expires_at: string | null;
+  expiresAt: Date | null;
 };
 
 export async function findTenantForEmail(email: string): Promise<TenantRow | null> {
   const domain = email.split('@')[1];
   if (!domain) return null;
 
-  const rows = (await sql()`
-    SELECT id, slug, display_name
-    FROM tenants
-    WHERE is_active = true AND ${domain} = ANY(allowed_email_domains)
-    LIMIT 1
-  `) as TenantRow[];
-  return rows[0] ?? null;
+  const rows = await db().select({ id: tenants.id, slug: tenants.slug, displayName: tenants.displayName })
+    .from(tenants)
+    .where(and(eq(tenants.isActive, true), sql`${domain} = ANY(${tenants.allowedEmailDomains})`))
+    .limit(1);
+  const tenant = rows[0];
+  return tenant ? { id: tenant.id, slug: tenant.slug, display_name: tenant.displayName } : null;
 }
 
 export async function getEligibilityForUser(
@@ -37,15 +38,16 @@ export async function getEligibilityForUser(
     });
   }
 
-  const rows = (await sql()`
-    SELECT status, category, expires_at
-    FROM student_eligibilities
-    WHERE tenant_id = ${tenant.id} AND clerk_user_id = ${user.clerkUserId}
-    ORDER BY updated_at DESC
-    LIMIT 1
-  `) as EligibilityRow[];
+  const rows = await db().select({
+    status: studentEligibilities.status,
+    category: studentEligibilities.category,
+    expiresAt: studentEligibilities.expiresAt,
+  }).from(studentEligibilities)
+    .where(and(eq(studentEligibilities.tenantId, tenant.id), eq(studentEligibilities.clerkUserId, user.clerkUserId)))
+    .orderBy(desc(studentEligibilities.updatedAt))
+    .limit(1) as EligibilityRow[];
   const record = rows[0];
-  const expiresAt = record?.expires_at ?? null;
+  const expiresAt = record?.expiresAt?.toISOString() ?? null;
   const expired = expiresAt ? new Date(expiresAt).getTime() <= Date.now() : false;
   const status = expired ? 'expired' : (record?.status ?? 'not_started');
 
@@ -74,17 +76,14 @@ export async function requireEligibleUser(request: Request) {
 }
 
 export async function markEligibilityPending(tenantId: string, clerkUserId: string) {
-  await sql()`
-    INSERT INTO student_eligibilities (tenant_id, clerk_user_id, status)
-    VALUES (${tenantId}, ${clerkUserId}, 'pending')
+  await db().execute(sql`
+    INSERT INTO student_eligibilities (tenant_id, clerk_user_id, status, created_at, updated_at)
+    VALUES (${tenantId}, ${clerkUserId}, 'pending', now(), now())
     ON CONFLICT (tenant_id, clerk_user_id) DO UPDATE SET
-      status = CASE
-        WHEN student_eligibilities.status = 'verified'
-          AND student_eligibilities.expires_at > now() THEN 'verified'
-        ELSE 'pending'
-      END,
+      status = CASE WHEN student_eligibilities.status = 'verified' AND student_eligibilities.expires_at > now()
+        THEN 'verified' ELSE 'pending' END,
       updated_at = now()
-  `;
+  `);
 }
 
 export async function recordVerificationResult(input: {
@@ -95,9 +94,8 @@ export async function recordVerificationResult(input: {
   category: EligibilityResponse['category'];
   expiresAt: string | null;
 }) {
-  const tenantRows = (await sql()`
-    SELECT id FROM tenants WHERE slug = ${input.tenantSlug} AND is_active = true LIMIT 1
-  `) as { id: string }[];
+  const tenantRows = await db().select({ id: tenants.id }).from(tenants)
+    .where(and(eq(tenants.slug, input.tenantSlug), eq(tenants.isActive, true))).limit(1);
   const tenant = tenantRows[0];
   if (!tenant) throw new Error('Verification callback referenced an unknown tenant.');
 
@@ -110,12 +108,12 @@ export async function recordVerificationResult(input: {
     ? new Date(Math.min(providerExpiry.getTime(), annualExpiry.getTime())).toISOString()
     : null;
 
-  await sql()`
+  await db().execute(sql`
     INSERT INTO student_eligibilities (
-      tenant_id, clerk_user_id, provider_reference, status, category, verified_at, expires_at
+      tenant_id, clerk_user_id, provider_reference, status, category, verified_at, expires_at, created_at, updated_at
     ) VALUES (
       ${tenant.id}, ${input.clerkUserId}, ${input.providerReference}, ${input.status},
-      ${input.category}, ${input.status === 'verified' ? new Date().toISOString() : null}, ${expiresAt}
+      ${input.category}, ${input.status === 'verified' ? new Date().toISOString() : null}, ${expiresAt}, now(), now()
     )
     ON CONFLICT (tenant_id, clerk_user_id) DO UPDATE SET
       provider_reference = EXCLUDED.provider_reference,
@@ -124,5 +122,5 @@ export async function recordVerificationResult(input: {
       verified_at = EXCLUDED.verified_at,
       expires_at = EXCLUDED.expires_at,
       updated_at = now()
-  `;
+  `);
 }

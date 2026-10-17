@@ -10,7 +10,9 @@
     "@clerk/expo": "^4.13.0",
     "@expo/ui": "~58.0.20",
     "@neondatabase/serverless": "^1.2.0",
+    "drizzle-orm": "^0.45.4",
     "expo": "~58.0.14",
+    "expo-audio": "~58.0.9",
     "expo-constants": "~58.0.12",
     "expo-device": "~58.0.5",
     "expo-font": "~58.0.8",
@@ -25,6 +27,7 @@
     "expo-symbols": "~58.0.4",
     "expo-system-ui": "~58.0.6",
     "expo-web-browser": "~58.0.6",
+    "openai": "^7.36.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "react-native": "0.88.0",
@@ -33,12 +36,16 @@
     "react-native-safe-area-context": "~5.10.1",
     "react-native-screens": "~4.30.0",
     "react-native-web": "~0.21.4",
-    "react-native-worklets": "0.13.0"
+    "react-native-worklets": "0.13.0",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/react": "~19.3.0",
+    "drizzle-kit": "^0.31.11",
+    "drizzle-seed": "^0.3.1",
     "eslint": "^9.39.5",
     "eslint-config-expo": "~58.0.4",
+    "tsx": "^4.23.15",
     "typescript": "~6.0.3"
   },
   "scripts": {
@@ -49,6 +56,8 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "typecheck": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate",
+    "db:seed": "tsx drizzle/seed.ts",
     "export:web": "expo export --platform web",
     "vercel-build": "expo export --platform web"
   },

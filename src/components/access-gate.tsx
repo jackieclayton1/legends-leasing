@@ -31,8 +31,9 @@ function EmailOtpSignIn() {
   const { fetchStatus: signInFetchStatus, signIn } = useSignIn();
   const { fetchStatus: signUpFetchStatus, signUp } = useSignUp();
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
-  const [phase, setPhase] = useState<'email' | 'code'>('email');
+  const [phase, setPhase] = useState<'email' | 'password' | 'code'>('email');
   const [isSigningUp, setIsSigningUp] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -48,23 +49,50 @@ function EmailOtpSignIn() {
     setIsSubmitting(true);
     setError(null);
     try {
-      const result = await signIn.create({ identifier: normalizedEmail });
+      const result = await signIn.create({
+        identifier: normalizedEmail,
+        signUpIfMissing: true,
+      });
       if (result.error) throw result.error;
 
       if (signIn.isTransferable) {
         const signUpResult = await signUp.create({ transfer: true });
         if (signUpResult.error) throw signUpResult.error;
-        const codeResult = await signUp.verifications.sendEmailCode();
-        if (codeResult.error) throw codeResult.error;
         setIsSigningUp(true);
+        setPhase('password');
       } else {
         const codeResult = await signIn.emailCode.sendCode();
         if (codeResult.error) throw codeResult.error;
         setIsSigningUp(false);
+        setPhase('code');
       }
-      setPhase('code');
     } catch (signInError) {
       setError(messageFrom(signInError));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const createPasswordAndSendCode = async () => {
+    if (!signUp) return;
+    if (password.length < 8) {
+      setError('Choose a password with at least 8 characters.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      const signUpResult = await signUp.password({
+        emailAddress: email.trim().toLowerCase(),
+        password,
+      });
+      if (signUpResult.error) throw signUpResult.error;
+      const codeResult = await signUp.verifications.sendEmailCode();
+      if (codeResult.error) throw codeResult.error;
+      setPhase('code');
+    } catch (signUpError) {
+      setError(messageFrom(signUpError));
     } finally {
       setIsSubmitting(false);
     }
@@ -106,6 +134,16 @@ function EmailOtpSignIn() {
             style={[styles.input, { borderColor: theme.backgroundSelected, color: theme.text }]}
             value={email}
           />
+        ) : phase === 'password' ? (
+          <TextInput
+            autoComplete="new-password"
+            onChangeText={setPassword}
+            placeholder="Create a password"
+            placeholderTextColor={theme.textSecondary}
+            secureTextEntry
+            style={[styles.input, { borderColor: theme.backgroundSelected, color: theme.text }]}
+            value={password}
+          />
         ) : (
           <TextInput
             autoComplete="one-time-code"
@@ -122,7 +160,7 @@ function EmailOtpSignIn() {
         <Pressable
           accessibilityRole="button"
           disabled={isSubmitting || signInFetchStatus === 'fetching' || signUpFetchStatus === 'fetching'}
-          onPress={() => void (phase === 'email' ? sendCode() : verifyCode())}
+          onPress={() => void (phase === 'email' ? sendCode() : phase === 'password' ? createPasswordAndSendCode() : verifyCode())}
           style={({ pressed }) => [
             styles.button,
             { backgroundColor: theme.tint },
@@ -132,12 +170,20 @@ function EmailOtpSignIn() {
             <ActivityIndicator color="#FFFFFF" />
           ) : (
             <ThemedText style={styles.buttonLabel}>
-              {phase === 'email' ? 'Sign in with UA email' : 'Verify code'}
+              {phase === 'email'
+                ? 'Continue with UA email'
+                : phase === 'password'
+                  ? 'Create account'
+                  : 'Verify code'}
             </ThemedText>
           )}
         </Pressable>
-        {phase === 'code' ? (
-          <Pressable onPress={() => setPhase('email')}>
+        {phase !== 'email' ? (
+          <Pressable onPress={() => {
+            setCode('');
+            setPassword('');
+            setPhase('email');
+          }}>
             <ThemedText type="link">Use a different email</ThemedText>
           </Pressable>
         ) : null}

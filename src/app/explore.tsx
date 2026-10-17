@@ -1,180 +1,101 @@
-import { Image } from 'expo-image';
-import { SymbolView } from 'expo-symbols';
-import { Platform, Pressable, ScrollView, StyleSheet } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useAuth } from '@clerk/expo';
+import { RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync, useAudioRecorder, useAudioRecorderState } from 'expo-audio';
+import { useCallback, useMemo, useState } from 'react';
+import { ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
-import { ExternalLink } from '@/components/external-link';
+import { askListingQuestion, interpretListingSearch, searchListings, transcribeAudio } from '@/lib/auth-api';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Collapsible } from '@/components/ui/collapsible';
-import { WebBadge } from '@/components/web-badge';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import type { ListingSearchResult, SearchFilters } from '@/lib/search';
 
-export default function TabTwoScreen() {
-  const safeAreaInsets = useSafeAreaInsets();
-  const insets = {
-    ...safeAreaInsets,
-    bottom: safeAreaInsets.bottom + BottomTabInset + Spacing.three,
-  };
+type ChatMessage = { role: 'user' | 'assistant'; text: string; citations?: { title: string; url: string }[] };
+const money = (cents: number) => `$${Math.round(cents / 100).toLocaleString()}`;
+
+export default function ExploreScreen() {
   const theme = useTheme();
+  const { getToken } = useAuth();
+  const recorder = useAudioRecorder(RecordingPresets.LOW_QUALITY);
+  const recorderState = useAudioRecorderState(recorder);
+  const [prompt, setPrompt] = useState('');
+  const [filters, setFilters] = useState<SearchFilters | null>(null);
+  const [results, setResults] = useState<ListingSearchResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<ListingSearchResult | null>(null);
+  const [question, setQuestion] = useState('');
+  const [threadId, setThreadId] = useState<string>();
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [isAsking, setIsAsking] = useState(false);
 
-  const contentPlatformStyle = Platform.select({
-    android: {
-      paddingTop: insets.top,
-      paddingLeft: insets.left,
-      paddingRight: insets.right,
-      paddingBottom: insets.bottom,
-    },
-    web: {
-      paddingTop: Spacing.six,
-      paddingBottom: Spacing.four,
-    },
-  });
+  const token = useCallback(async () => {
+    const value = await getToken();
+    if (!value) throw new Error('Your session expired. Please sign in again.');
+    return value;
+  }, [getToken]);
 
-  return (
-    <ScrollView
-      style={[styles.scrollView, { backgroundColor: theme.background }]}
-      contentInset={insets}
-      contentContainerStyle={[styles.contentContainer, contentPlatformStyle]}>
-      <ThemedView style={styles.container}>
-        <ThemedView style={styles.titleContainer}>
-          <ThemedText type="subtitle">Explore</ThemedText>
-          <ThemedText style={styles.centerText} themeColor="textSecondary">
-            This starter app includes example{'\n'}code to help you get started.
-          </ThemedText>
+  const search = useCallback(async () => {
+    if (!prompt.trim()) return;
+    setIsSearching(true); setError(null); setSelected(null); setMessages([]); setThreadId(undefined);
+    try {
+      const interpreted = await interpretListingSearch(await token(), { prompt });
+      const found = await searchListings(await token(), interpreted.filters);
+      setFilters(found.filters); setResults(found.listings);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to search listings.'); setResults([]); }
+    finally { setIsSearching(false); }
+  }, [prompt, token]);
 
-          <ExternalLink href="https://docs.expo.dev" asChild>
-            <Pressable style={({ pressed }) => pressed && styles.pressed}>
-              <ThemedView type="backgroundElement" style={styles.linkButton}>
-                <ThemedText type="link">Expo documentation</ThemedText>
-                <SymbolView
-                  tintColor={theme.text}
-                  name={{ ios: 'arrow.up.right.square', android: 'link', web: 'link' }}
-                  size={12}
-                />
-              </ThemedView>
-            </Pressable>
-          </ExternalLink>
-        </ThemedView>
+  const voiceSearch = useCallback(async () => {
+    setError(null);
+    try {
+      if (!recorderState.isRecording) {
+        const permission = await requestRecordingPermissionsAsync();
+        if (!permission.granted) throw new Error('Microphone access is required for voice search.');
+        await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+        await recorder.prepareToRecordAsync();
+        await recorder.record({ forDuration: 30 });
+        return;
+      }
+      await recorder.stop();
+      if (!recorder.uri) throw new Error('No audio was captured. Please try again.');
+      const blob = await fetch(recorder.uri).then((response) => response.blob());
+      const result = await transcribeAudio(await token(), blob, 'student-search.m4a');
+      setPrompt(result.text);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to transcribe audio.'); }
+  }, [recorder, recorderState.isRecording, token]);
 
-        <ThemedView style={styles.sectionsWrapper}>
-          <Collapsible title="File-based routing">
-            <ThemedText type="small">
-              This app has two screens: <ThemedText type="code">src/app/index.tsx</ThemedText> and{' '}
-              <ThemedText type="code">src/app/explore.tsx</ThemedText>
-            </ThemedText>
-            <ThemedText type="small">
-              The layout file in <ThemedText type="code">src/app/_layout.tsx</ThemedText> sets up
-              the tab navigator.
-            </ThemedText>
-            <ExternalLink href="https://docs.expo.dev/router/introduction">
-              <ThemedText type="linkPrimary">Learn more</ThemedText>
-            </ExternalLink>
-          </Collapsible>
+  const ask = useCallback(async () => {
+    if (!selected || !question.trim()) return;
+    const text = question.trim(); setQuestion(''); setIsAsking(true); setError(null);
+    setMessages((current) => [...current, { role: 'user', text }]);
+    try {
+      const answer = await askListingQuestion(await token(), selected.id, text, threadId);
+      setThreadId(answer.threadId);
+      setMessages((current) => [...current, { role: 'assistant', text: answer.message.text, citations: answer.message.citations }]);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to answer that question.'); }
+    finally { setIsAsking(false); }
+  }, [question, selected, threadId, token]);
 
-          <Collapsible title="Android, iOS, and web support">
-            <ThemedView type="backgroundElement" style={styles.collapsibleContent}>
-              <ThemedText type="small">
-                You can open this project on Android, iOS, and the web. To open the web version,
-                press <ThemedText type="smallBold">w</ThemedText> in the terminal running this
-                project.
-              </ThemedText>
-              <Image
-                source={require('@/assets/images/tutorial-web.png')}
-                style={styles.imageTutorial}
-              />
-            </ThemedView>
-          </Collapsible>
+  const filterSummary = useMemo(() => {
+    if (!filters) return null;
+    return [filters.maxMonthlyRentCents && `≤ ${money(filters.maxMonthlyRentCents)}`, filters.bedrooms && `${filters.bedrooms} bed`, filters.busRoute, ...filters.accessibilityTags].filter(Boolean).join(' · ') || 'AI interpreted your request.';
+  }, [filters]);
 
-          <Collapsible title="Images">
-            <ThemedText type="small">
-              For static images, you can use the <ThemedText type="code">@2x</ThemedText> and{' '}
-              <ThemedText type="code">@3x</ThemedText> suffixes to provide files for different
-              screen densities.
-            </ThemedText>
-            <Image source={require('@/assets/images/react-logo.png')} style={styles.imageReact} />
-            <ExternalLink href="https://reactnative.dev/docs/images">
-              <ThemedText type="linkPrimary">Learn more</ThemedText>
-            </ExternalLink>
-          </Collapsible>
+  if (selected) return <ScrollView style={{ backgroundColor: theme.background }} contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.detail} keyboardShouldPersistTaps="handled">
+    <Pressable onPress={() => setSelected(null)}><ThemedText type="link">‹ Back to results</ThemedText></Pressable>
+    <ThemedText type="title">{selected.title}</ThemedText><ThemedText themeColor="textSecondary">{selected.address}</ThemedText>
+    <ThemedView type="backgroundElement" style={styles.card}><ThemedText type="subtitle">{money(selected.monthlyRentCents)}/month</ThemedText><ThemedText selectable>{selected.bedrooms} bed · {selected.bathrooms} bath · {selected.availableFrom}–{selected.availableUntil}</ThemedText><ThemedText selectable>{selected.description}</ThemedText><ThemedText themeColor="textSecondary">{[...selected.accessibilityTags, ...selected.amenities, ...selected.busRoutes].join(' · ') || 'No extra listing details provided.'}</ThemedText></ThemedView>
+    <ThemedText type="subtitle">Ask about this place</ThemedText><ThemedText themeColor="textSecondary">Answers use approved listing data. Confirm unknown details with the lister.</ThemedText>
+    {messages.map((message, index) => <ThemedView key={`${message.role}-${index}`} type="backgroundElement" style={[styles.message, message.role === 'user' && { borderColor: theme.tint, borderWidth: 1 }]}><ThemedText type="smallBold">{message.role === 'user' ? 'You' : 'Legends AI'}</ThemedText><ThemedText selectable>{message.text}</ThemedText>{message.citations?.map((citation) => <ThemedText key={citation.url} type="small" themeColor="textSecondary">Source: {citation.title}</ThemedText>)}</ThemedView>)}
+    <TextInput value={question} onChangeText={setQuestion} placeholder="e.g. Is parking included?" placeholderTextColor={theme.textSecondary} multiline style={[styles.input, { borderColor: theme.backgroundSelected, color: theme.text }]} />
+    <Pressable disabled={isAsking || !question.trim()} onPress={() => void ask()} style={({ pressed }) => [styles.button, { backgroundColor: theme.tint }, (pressed || isAsking) && styles.pressed]}>{isAsking ? <ActivityIndicator color="#fff" /> : <ThemedText style={styles.buttonText}>Ask Legends AI</ThemedText>}</Pressable>{error ? <ThemedText selectable style={{ color: theme.danger }}>{error}</ThemedText> : null}
+  </ScrollView>;
 
-          <Collapsible title="Light and dark mode components">
-            <ThemedText type="small">
-              This template has light and dark mode support. The{' '}
-              <ThemedText type="code">useColorScheme()</ThemedText> hook lets you inspect what the
-              user&apos;s current color scheme is, and so you can adjust UI colors accordingly.
-            </ThemedText>
-            <ExternalLink href="https://docs.expo.dev/develop/user-interface/color-themes/">
-              <ThemedText type="linkPrimary">Learn more</ThemedText>
-            </ExternalLink>
-          </Collapsible>
-
-          <Collapsible title="Animations">
-            <ThemedText type="small">
-              This template includes an example of an animated component. The{' '}
-              <ThemedText type="code">src/components/ui/collapsible.tsx</ThemedText> component uses
-              the powerful <ThemedText type="code">react-native-reanimated</ThemedText> library to
-              animate opening this hint.
-            </ThemedText>
-          </Collapsible>
-        </ThemedView>
-        {Platform.OS === 'web' && <WebBadge />}
-      </ThemedView>
-    </ScrollView>
-  );
+  return <FlatList data={results} keyExtractor={(item) => item.id} style={{ backgroundColor: theme.background }} contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.list} keyboardShouldPersistTaps="handled"
+    ListHeaderComponent={<View style={styles.header}><ThemedText type="title">Find your next place</ThemedText><ThemedText themeColor="textSecondary">Describe the lease, budget, transit, accessibility, or campus location you need.</ThemedText><TextInput value={prompt} onChangeText={setPrompt} placeholder="A furnished, accessible place near campus under $900…" placeholderTextColor={theme.textSecondary} multiline style={[styles.input, { borderColor: theme.backgroundSelected, color: theme.text }]} /><View style={styles.actions}><Pressable disabled={isSearching || !prompt.trim()} onPress={() => void search()} style={({ pressed }) => [styles.button, styles.grow, { backgroundColor: theme.tint }, (pressed || isSearching) && styles.pressed]}>{isSearching ? <ActivityIndicator color="#fff" /> : <ThemedText style={styles.buttonText}>Search with AI</ThemedText>}</Pressable><Pressable accessibilityLabel={recorderState.isRecording ? 'Stop recording' : 'Record voice search'} onPress={() => void voiceSearch()} style={({ pressed }) => [styles.voice, { borderColor: recorderState.isRecording ? theme.danger : theme.tint }, pressed && styles.pressed]}><ThemedText style={{ color: recorderState.isRecording ? theme.danger : theme.tint }}>{recorderState.isRecording ? 'Stop' : 'Voice'}</ThemedText></Pressable></View>{filterSummary ? <ThemedView type="backgroundElement" style={styles.note}><ThemedText type="smallBold">Filters</ThemedText><ThemedText themeColor="textSecondary">{filterSummary}</ThemedText></ThemedView> : null}{error ? <ThemedText selectable style={{ color: theme.danger }}>{error}</ThemedText> : null}{!isSearching && filters && results.length === 0 ? <ThemedText themeColor="textSecondary">No published listings match yet. Try a wider budget, date range, or fewer requirements.</ThemedText> : null}</View>}
+    renderItem={({ item }) => <Pressable onPress={() => setSelected(item)} style={({ pressed }) => [styles.result, pressed && styles.pressed]}><ThemedView type="backgroundElement" style={styles.card}><View style={styles.row}><ThemedText type="subtitle">{item.title}</ThemedText><ThemedText type="smallBold">{money(item.monthlyRentCents)}</ThemedText></View><ThemedText themeColor="textSecondary">{item.address}{item.distanceMiles !== undefined ? ` · ${item.distanceMiles} mi away` : ''}</ThemedText><ThemedText>{item.bedrooms} bed · {item.bathrooms} bath · Available {item.availableFrom}</ThemedText><ThemedText type="small" themeColor="textSecondary">{[...item.accessibilityTags, ...item.busRoutes].join(' · ')}</ThemedText></ThemedView></Pressable>}
+  />;
 }
 
-const styles = StyleSheet.create({
-  scrollView: {
-    flex: 1,
-  },
-  contentContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-  },
-  container: {
-    maxWidth: MaxContentWidth,
-    flexGrow: 1,
-  },
-  titleContainer: {
-    gap: Spacing.three,
-    alignItems: 'center',
-    paddingHorizontal: Spacing.four,
-    paddingVertical: Spacing.six,
-  },
-  centerText: {
-    textAlign: 'center',
-  },
-  pressed: {
-    opacity: 0.7,
-  },
-  linkButton: {
-    flexDirection: 'row',
-    paddingHorizontal: Spacing.four,
-    paddingVertical: Spacing.two,
-    borderRadius: Spacing.five,
-    justifyContent: 'center',
-    gap: Spacing.one,
-    alignItems: 'center',
-  },
-  sectionsWrapper: {
-    gap: Spacing.five,
-    paddingHorizontal: Spacing.four,
-    paddingTop: Spacing.three,
-  },
-  collapsibleContent: {
-    alignItems: 'center',
-  },
-  imageTutorial: {
-    width: '100%',
-    aspectRatio: 296 / 171,
-    borderRadius: Spacing.three,
-    marginTop: Spacing.two,
-  },
-  imageReact: {
-    width: 100,
-    height: 100,
-    alignSelf: 'center',
-  },
-});
+const styles = StyleSheet.create({ list: { padding: Spacing.four, gap: Spacing.three, paddingBottom: 120 }, detail: { padding: Spacing.four, gap: Spacing.three, paddingBottom: 120 }, header: { gap: Spacing.three, marginBottom: Spacing.three }, input: { borderWidth: StyleSheet.hairlineWidth, borderRadius: Spacing.three, minHeight: 54, padding: Spacing.three, textAlignVertical: 'top' }, actions: { flexDirection: 'row', gap: Spacing.two }, grow: { flex: 1 }, button: { alignItems: 'center', borderRadius: Spacing.three, justifyContent: 'center', minHeight: 48, paddingHorizontal: Spacing.four }, voice: { alignItems: 'center', borderRadius: Spacing.three, borderWidth: 1, justifyContent: 'center', minWidth: 76, paddingHorizontal: Spacing.three }, buttonText: { color: '#FFFFFF', fontWeight: '700' }, pressed: { opacity: 0.65 }, note: { gap: Spacing.one, padding: Spacing.three, borderRadius: Spacing.three, borderCurve: 'continuous' }, result: { marginBottom: Spacing.three }, card: { gap: Spacing.two, padding: Spacing.four, borderRadius: Spacing.four, borderCurve: 'continuous' }, row: { flexDirection: 'row', gap: Spacing.three, justifyContent: 'space-between' }, message: { gap: Spacing.one, padding: Spacing.three, borderRadius: Spacing.three, borderCurve: 'continuous' } });
