@@ -1,13 +1,15 @@
 import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
+import { useAuth } from '@clerk/expo';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Keyboard, Platform, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { DirectionsPanel } from '@/components/maps/directions-panel';
 import { HomePanel } from '@/components/maps/home-panel';
 import { LandmarkCard } from '@/components/maps/landmark-card';
+import { ListingAssistant } from '@/components/maps/listing-assistant';
 import { MapCanvas } from '@/components/maps/map-canvas';
 import type { MapCanvasHandle, MapType } from '@/components/maps/map-canvas.types';
 import { MapControls } from '@/components/maps/map-controls';
@@ -16,16 +18,19 @@ import { PlaceCard } from '@/components/maps/place-card';
 import { SearchBar } from '@/components/maps/search-bar';
 import { WeatherBadge } from '@/components/maps/weather-badge';
 import { useMapsTheme } from '@/constants/maps-theme';
-import { APARTMENTS, apartmentById } from '@/data/apartments';
+import { APARTMENTS } from '@/data/apartments';
 import { CAMPUS_OUTLINE, LANDMARKS, landmarkById } from '@/data/campus';
-import type { LatLng, Route, TravelMode } from '@/data/types';
+import type { Apartment, LatLng, Route, TravelMode } from '@/data/types';
 import { useIsClient } from '@/hooks/use-is-client';
 import { filterApartments, filterLandmarks, NO_FILTERS, type SortKey } from '@/lib/filters';
 import { fetchRoute } from '@/lib/routing';
+import { searchListings } from '@/lib/auth-api';
+import { listingToApartment } from '@/lib/listing-map';
 
 type Panel =
   | { kind: 'home' }
   | { kind: 'apartment'; id: string }
+  | { kind: 'assistant'; id: string }
   | { kind: 'landmark'; id: string }
   | { kind: 'directions'; id: string };
 
@@ -43,6 +48,7 @@ export default function Index() {
 }
 
 function MapScreen() {
+  const { getToken } = useAuth();
   const map = useRef<MapCanvasHandle>(null);
   const safe = useSafeAreaInsets();
   const { dark } = useMapsTheme();
@@ -63,13 +69,32 @@ function MapScreen() {
   const [destinationId, setDestinationId] = useState('quad');
   const [mode, setMode] = useState<TravelMode>('walk');
   const [route, setRoute] = useState<Route | null>(null);
+  const [databaseApartments, setDatabaseApartments] = useState<Apartment[] | null>(null);
 
-  const results = filterApartments(APARTMENTS, query, filters, sort, saved);
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      try {
+        const token = await getToken();
+        if (!token) return;
+        const response = await searchListings(token, { accessibilityTags: [], amenities: [] });
+        if (active) setDatabaseApartments(response.listings.map(listingToApartment));
+      } catch {
+        // The polished map remains useful during local setup before the migration/seed runs.
+      }
+    })();
+    return () => { active = false; };
+  }, [getToken]);
+
+  const apartments = databaseApartments ?? APARTMENTS;
+  const apartmentById = useMemo(() => Object.fromEntries(apartments.map((apartment) => [apartment.id, apartment])) as Record<string, Apartment>, [apartments]);
+
+  const results = filterApartments(apartments, query, filters, sort, saved);
   const placeResults = filterLandmarks(LANDMARKS, query);
 
   const selectedId = panel.kind === 'home' ? null : panel.id;
   const selectedApartment =
-    panel.kind === 'apartment' || panel.kind === 'directions' ? apartmentById[panel.id] : null;
+    panel.kind === 'apartment' || panel.kind === 'directions' || panel.kind === 'assistant' ? apartmentById[panel.id] : null;
   // Keep the selected apartment on the map even if filters would hide it.
   const mapApartments =
     selectedApartment && !results.includes(selectedApartment)
@@ -80,15 +105,17 @@ function MapScreen() {
   const directionsFor = panel.kind === 'directions' ? panel.id : null;
   useEffect(() => {
     if (!directionsFor) return;
+    const apartment = apartmentById[directionsFor];
+    if (!apartment) return;
     const controller = new AbortController();
-    fetchRoute(apartmentById[directionsFor], landmarkById[destinationId], mode, controller.signal)
+    fetchRoute(apartment, landmarkById[destinationId], mode, controller.signal)
       .then((r) => {
         setRoute(r);
         map.current?.fitTo(r.coordinates.map(([longitude, latitude]) => ({ latitude, longitude })));
       })
       .catch(() => {});
     return () => controller.abort();
-  }, [directionsFor, destinationId, mode]);
+  }, [apartmentById, directionsFor, destinationId, mode]);
 
   const mapInsets = wide
     ? { top: 0, bottom: 0, left: panelWidth + 24, right: 0 }
@@ -163,9 +190,12 @@ function MapScreen() {
           setMode(m);
           setPanel({ kind: 'directions', id: panel.id });
         }}
+        onAskAI={() => setPanel({ kind: 'assistant', id: panel.id })}
         onClose={closePanel}
       />
     );
+  } else if (panel.kind === 'assistant') {
+    content = <ListingAssistant apartment={apartmentById[panel.id]} onClose={() => setPanel({ kind: 'apartment', id: panel.id })} />;
   } else if (panel.kind === 'directions') {
     content = (
       <DirectionsPanel
@@ -185,7 +215,7 @@ function MapScreen() {
     content = (
       <LandmarkCard
         landmark={landmarkById[panel.id]}
-        apartments={APARTMENTS}
+        apartments={apartments}
         saved={saved}
         onSelectApartment={selectApartment}
         onClose={closePanel}

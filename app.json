@@ -38,9 +38,19 @@
         {
           "locationWhenInUsePermission": "Show your location on the map relative to campus and nearby apartments."
         }
-      ]
+      ],
+      "expo-secure-store",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Allow Legends Leasing to record a short voice search.",
+          "enableBackgroundRecording": false
+        }
+      ],
+      "@clerk/expo"
     ],
     "experiments": {
+      "autolinkingModuleResolution": true,
       "typedRoutes": true,
       "reactCompiler": true
     }

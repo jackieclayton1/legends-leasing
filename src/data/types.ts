@@ -22,6 +22,8 @@ export type Apartment = LatLng & {
   pets: boolean;
   furnished: boolean;
   shuttle: boolean;
+  /** Verified transit routes serving this listing's geolocation, when supplied by the listing data. */
+  busRoutes?: string[];
   parking: string;
   /** Two colors for the photo placeholder gradient. */
   palette: [string, string];

@@ -4,8 +4,13 @@
   "main": "expo-router/entry",
   "dependencies": {
     "@expo/ui": "~58.0.20",
+    "@clerk/backend": "^3.25.0",
+    "@clerk/expo": "^4.13.0",
+    "@neondatabase/serverless": "^1.2.0",
+    "drizzle-orm": "^0.45.4",
     "expo": "~58.0.14",
     "expo-blur": "~58.0.4",
+    "expo-audio": "~58.0.9",
     "expo-constants": "~58.0.12",
     "expo-device": "~58.0.5",
     "expo-font": "~58.0.8",
@@ -22,6 +27,7 @@
     "expo-system-ui": "~58.0.6",
     "expo-web-browser": "~58.0.6",
     "maplibre-gl": "^5.24.0",
+    "openai": "^7.36.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "react-native": "0.88.0",
@@ -31,11 +37,17 @@
     "react-native-safe-area-context": "~5.10.1",
     "react-native-screens": "~4.30.0",
     "react-native-web": "~0.21.4",
-    "react-native-worklets": "0.13.0"
+    "react-native-worklets": "0.13.0",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/react": "~19.3.0",
     "@types/react-dom": "^19.3.0",
+    "drizzle-kit": "^0.31.11",
+    "drizzle-seed": "^0.3.1",
+    "eslint": "^9.39.5",
+    "eslint-config-expo": "~58.0.4",
+    "tsx": "^4.23.15",
     "typescript": "~6.0.3"
   },
   "scripts": {
@@ -44,7 +56,12 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "typecheck": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate",
+    "db:seed": "tsx drizzle/seed.ts",
+    "export:web": "expo export --platform web",
+    "vercel-build": "expo export --platform web"
   },
   "private": true
 }

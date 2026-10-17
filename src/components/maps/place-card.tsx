@@ -24,6 +24,7 @@ export function PlaceCard({
   onDestinationChange,
   onToggleSaved,
   onDirections,
+  onAskAI,
   onClose,
 }: {
   apartment: Apartment;
@@ -32,6 +33,7 @@ export function PlaceCard({
   onDestinationChange: (id: string) => void;
   onToggleSaved: () => void;
   onDirections: (mode: TravelMode) => void;
+  onAskAI: () => void;
   onClose: () => void;
 }) {
   const { colors } = useMapsTheme();
@@ -78,6 +80,11 @@ export function PlaceCard({
           glyph={saved ? { ios: 'heart.fill', md: 'favorite' } : { ios: 'heart', md: 'favorite' }}
           tint={saved ? '#FF2D55' : undefined}
           onPress={onToggleSaved}
+        />
+        <ActionButton
+          label="Ask AI"
+          glyph={{ ios: 'sparkles', md: 'auto_awesome' }}
+          onPress={onAskAI}
         />
         <ActionButton
           label="Tour"
@@ -233,7 +240,7 @@ export function PlaceCard({
         <Separator />
         <Detail label="Furnished" value={a.furnished ? 'Yes' : 'No'} />
         <Separator />
-        <Detail label="Campus Shuttle" value={a.shuttle ? 'On the CrimsonRide route' : 'No'} />
+        <Detail label="Campus Shuttle" value={a.busRoutes?.join(', ') || (a.shuttle ? 'Campus shuttle nearby' : 'No route listed')} />
         <Separator />
         <Detail label="Built" value={String(a.yearBuilt)} />
       </Group>
