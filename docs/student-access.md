@@ -1,10 +1,11 @@
 # Student access configuration
 
-The client offers passwordless Clerk email-code sign-in and labels the entry point
-**Sign in with UA email**. This is not official UA SSO. Configure Clerk to permit
-email-code sign-in/sign-up and require verified email addresses; do not enable
-passwords for this flow. Both `@ua.edu` and `@crimson.ua.edu` addresses are
-accepted and map to the same UA tenant.
+The client labels the entry point **Continue with UA email**. This is not official
+UA SSO. Existing accounts sign in with an email code. The current Clerk development
+instance requires a password when creating a new account, so first-time students
+create one before receiving their verification code. Configure Clerk to permit
+email-code sign-in/sign-up and require verified email addresses. Both `@ua.edu` and
+`@crimson.ua.edu` addresses are accepted and map to the same UA tenant.
 
 ## Required environment variables
 

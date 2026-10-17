@@ -10,6 +10,7 @@ import { AccessGate } from '@/components/access-gate';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
+import { PaymentsProvider } from '@/components/payments-provider';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -20,9 +21,7 @@ export default function TabLayout() {
   const content = (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <AnimatedSplashOverlay />
-      <AccessGate>
-        <AppTabs />
-      </AccessGate>
+      <PaymentsProvider><AccessGate><AppTabs /></AccessGate></PaymentsProvider>
     </ThemeProvider>
   );
 

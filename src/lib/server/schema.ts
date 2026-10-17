@@ -78,3 +78,69 @@ export const verificationCases = pgTable('verification_cases', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
 });
+
+/** Provider references and transaction states only — never card, credit, or document contents. */
+export const leaseTransferTransactions = pgTable('lease_transfer_transactions', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  listingId: uuid('listing_id').notNull().references(() => listings.id, { onDelete: 'restrict' }),
+  payerClerkUserId: text('payer_clerk_user_id').notNull(),
+  recipientClerkUserId: text('recipient_clerk_user_id').notNull(),
+  priceCents: integer('price_cents').notNull(),
+  currency: text('currency').notNull().default('usd'),
+  platformFeeBps: integer('platform_fee_bps').notNull().default(500),
+  platformFeeCents: integer('platform_fee_cents').notNull(),
+  stripeCustomerId: text('stripe_customer_id'),
+  stripeSetupIntentId: text('stripe_setup_intent_id'),
+  stripePaymentMethodId: text('stripe_payment_method_id'),
+  stripeConnectAccountId: text('stripe_connect_account_id'),
+  stripePaymentIntentId: text('stripe_payment_intent_id'),
+  stripeTransferId: text('stripe_transfer_id'),
+  stripeRefundId: text('stripe_refund_id'),
+  paymentConsentAt: timestamp('payment_consent_at', { withTimezone: true }).notNull(),
+  docusignEnvelopeId: text('docusign_envelope_id'),
+  agreementStatus: text('agreement_status').notNull().default('pending'),
+  propertyApprovalStatus: text('property_approval_status').notNull().default('pending'),
+  recipientReadinessStatus: text('recipient_readiness_status').notNull().default('pending'),
+  status: text('status').notNull().default('awaiting_payment_method'),
+  cancellationReason: text('cancellation_reason'),
+  cancellationRequestedAt: timestamp('cancellation_requested_at', { withTimezone: true }),
+  cancellationReviewedBy: text('cancellation_reviewed_by'),
+  cancellationReviewedAt: timestamp('cancellation_reviewed_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+});
+
+export const leaseTransferProviderEvents = pgTable('lease_transfer_provider_events', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  transactionId: uuid('transaction_id').references(() => leaseTransferTransactions.id, { onDelete: 'set null' }),
+  provider: text('provider').notNull(),
+  providerEventId: text('provider_event_id').notNull(),
+  eventType: text('event_type').notNull(),
+  payload: jsonb('payload').notNull().default({}),
+  receivedAt: timestamp('received_at', { withTimezone: true }).notNull(),
+});
+
+/** One Stripe Connect Express account per recipient within a tenant. */
+export const stripeConnectAccounts = pgTable('stripe_connect_accounts', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  clerkUserId: text('clerk_user_id').notNull(),
+  stripeAccountId: text('stripe_account_id').notNull(),
+  readinessStatus: text('readiness_status').notNull().default('pending'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+});
+
+export const leaseTransferApprovals = pgTable('lease_transfer_approvals', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  transactionId: uuid('transaction_id').notNull().references(() => leaseTransferTransactions.id, { onDelete: 'cascade' }),
+  kind: text('kind').notNull(),
+  status: text('status').notNull().default('pending'),
+  decisionNote: text('decision_note'),
+  otpHash: text('otp_hash'),
+  otpExpiresAt: timestamp('otp_expires_at', { withTimezone: true }),
+  decidedAt: timestamp('decided_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+});

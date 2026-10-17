@@ -120,7 +120,7 @@ function EmailOtpSignIn() {
     <GateShell>
       <ThemedText type="title">UA student access</ThemedText>
       <ThemedText themeColor="textSecondary" style={styles.copy}>
-        Use your UA email to receive a one-time sign-in code. This is not UA official SSO.
+        Sign in or create an account with your UA email. New students create a password, then verify by email. This is not UA official SSO.
       </ThemedText>
       <View style={styles.form}>
         {phase === 'email' ? (

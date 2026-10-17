@@ -41,6 +41,13 @@
           "enableBackgroundRecording": false
         }
       ],
+      [
+        "@stripe/stripe-react-native",
+        {
+          "merchantIdentifier": "merchant.com.legendsleasing",
+          "enableGooglePay": false
+        }
+      ],
       "@clerk/expo"
     ],
     "experiments": {
