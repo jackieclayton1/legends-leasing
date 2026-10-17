@@ -1,98 +1,119 @@
-import * as Device from 'expo-device';
-import { Platform, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet } from 'react-native';
 
-import { AnimatedIcon } from '@/components/animated-icon';
-import { HintRow } from '@/components/hint-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { WebBadge } from '@/components/web-badge';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
-
-function getDevMenuHint() {
-  if (Platform.OS === 'web') {
-    return <ThemedText type="small">use browser devtools</ThemedText>;
-  }
-  if (Device.isDevice) {
-    return (
-      <ThemedText type="small">
-        shake device or press <ThemedText type="code">m</ThemedText> in terminal
-      </ThemedText>
-    );
-  }
-  const shortcut = Platform.OS === 'android' ? 'cmd+m (or ctrl+m)' : 'cmd+d';
-  return (
-    <ThemedText type="small">
-      press <ThemedText type="code">{shortcut}</ThemedText>
-    </ThemedText>
-  );
-}
+import { useTheme } from '@/hooks/use-theme';
+import { apiUrl, getHealth, type HealthResponse } from '@/lib/api';
 
 export default function HomeScreen() {
-  return (
-    <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
-        <ThemedView style={styles.heroSection}>
-          <AnimatedIcon />
-          <ThemedText type="title" style={styles.title}>
-            Welcome to&nbsp;Expo
-          </ThemedText>
-        </ThemedView>
+  const theme = useTheme();
+  const [result, setResult] = useState<HealthResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-        <ThemedText type="code" style={styles.code}>
-          get started
+  const checkApi = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      setResult(await getHealth());
+    } catch (requestError) {
+      setResult(null);
+      setError(requestError instanceof Error ? requestError.message : 'Unable to reach the API.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void checkApi();
+  }, [checkApi]);
+
+  return (
+    <ScrollView
+      style={[styles.scrollView, { backgroundColor: theme.background }]}
+      contentInsetAdjustmentBehavior="automatic"
+      contentContainerStyle={styles.content}>
+      <ThemedView style={styles.container}>
+        <ThemedText type="title">Connected app</ThemedText>
+        <ThemedText themeColor="textSecondary" style={styles.description}>
+          This screen calls an Expo Router API route that is deployed alongside the web app.
         </ThemedText>
 
-        <ThemedView type="backgroundElement" style={styles.stepContainer}>
-          <HintRow
-            title="Try editing"
-            hint={<ThemedText type="code">src/app/index.tsx</ThemedText>}
-          />
-          <HintRow title="Dev tools" hint={getDevMenuHint()} />
-          <HintRow
-            title="Fresh start"
-            hint={<ThemedText type="code">npm run reset-project</ThemedText>}
-          />
+        <ThemedView type="backgroundElement" style={styles.card}>
+          <ThemedText type="smallBold">GET {apiUrl('/api/health')}</ThemedText>
+
+          {isLoading ? (
+            <ThemedView style={styles.statusRow}>
+              <ActivityIndicator color={theme.tint} />
+              <ThemedText themeColor="textSecondary">Contacting API…</ThemedText>
+            </ThemedView>
+          ) : error ? (
+            <ThemedText selectable style={[styles.status, { color: theme.danger }]}>
+              {error}
+            </ThemedText>
+          ) : (
+            <ThemedView style={styles.response}>
+              <ThemedText type="subtitle" selectable>
+                {result?.message}
+              </ThemedText>
+              <ThemedText selectable themeColor="textSecondary">
+                Status: {result?.status} · {result?.timestamp}
+              </ThemedText>
+            </ThemedView>
+          )}
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Call API again"
+            disabled={isLoading}
+            onPress={() => void checkApi()}
+            style={({ pressed }) => [
+              styles.button,
+              { backgroundColor: theme.tint },
+              (pressed || isLoading) && styles.buttonPressed,
+            ]}>
+            <ThemedText style={styles.buttonLabel}>Call API</ThemedText>
+          </Pressable>
         </ThemedView>
 
-        {Platform.OS === 'web' && <WebBadge />}
-      </SafeAreaView>
-    </ThemedView>
+        <ThemedText type="small" themeColor="textSecondary">
+          Set EXPO_PUBLIC_API_URL to your Vercel URL to use the deployed API from a native dev
+          build. Leave it unset to call the local Expo server.
+        </ThemedText>
+      </ThemedView>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
+  scrollView: { flex: 1 },
+  content: {
     flexDirection: 'row',
-  },
-  safeArea: {
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    alignItems: 'center',
-    gap: Spacing.three,
-    paddingBottom: BottomTabInset + Spacing.three,
-    maxWidth: MaxContentWidth,
-  },
-  heroSection: {
-    alignItems: 'center',
     justifyContent: 'center',
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    gap: Spacing.four,
+    padding: Spacing.four,
+    paddingBottom: BottomTabInset + Spacing.four,
   },
-  title: {
-    textAlign: 'center',
-  },
-  code: {
-    textTransform: 'uppercase',
-  },
-  stepContainer: {
+  container: { flex: 1, gap: Spacing.four, maxWidth: MaxContentWidth },
+  description: { lineHeight: 22 },
+  card: {
     gap: Spacing.three,
-    alignSelf: 'stretch',
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.four,
+    padding: Spacing.four,
     borderRadius: Spacing.four,
+    borderCurve: 'continuous',
   },
+  statusRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
+  status: { lineHeight: 22 },
+  response: { gap: Spacing.one },
+  button: {
+    alignItems: 'center',
+    borderRadius: Spacing.three,
+    borderCurve: 'continuous',
+    paddingHorizontal: Spacing.four,
+    paddingVertical: Spacing.three,
+  },
+  buttonPressed: { opacity: 0.7 },
+  buttonLabel: { color: '#FFFFFF', fontWeight: '700' },
 });

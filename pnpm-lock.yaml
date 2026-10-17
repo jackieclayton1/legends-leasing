@@ -35,6 +35,9 @@ importers:
       expo-router:
         specifier: ~58.0.23
         version: 58.0.23(0149e18645eb23e5dbd90dbf350ef982)
+      expo-server:
+        specifier: ~58.0.5
+        version: 58.0.5
       expo-splash-screen:
         specifier: ~58.0.10
         version: 58.0.10(expo@58.0.14)(typescript@6.0.3)
